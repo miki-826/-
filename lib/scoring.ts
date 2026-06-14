@@ -134,11 +134,113 @@ function characterScoreLocal(
   );
 }
 
+function signedSeconds(n: number): string {
+  const value = Math.abs(n).toFixed(1);
+  return n >= 0 ? `${value}秒長め` : `${value}秒短め`;
+}
+
+function scoreLabel(score: number): string {
+  if (score >= 85) return "かなり近い";
+  if (score >= 70) return "方向性は合っている";
+  if (score >= 55) return "部分的に近い";
+  return "まだ差が大きい";
+}
+
+function buildDetailedComment(
+  challenge: Challenge,
+  r: Omit<ScoreResult, "comment" | "goodPoint" | "improvement" | "title">,
+  features: AudioFeatures
+): { goodPoint: string; improvement: string; comment: string } {
+  const durationDiff = features.duration - challenge.targetDuration;
+  const silencePct = Math.round((features.silenceRatio ?? 0) * 100);
+  const avgVolume = features.averageVolume ?? 0;
+  const dynamicRange = features.volumeDynamicRange ?? features.volumeVariance ?? 0;
+  const pitchRange = features.pitchRange ?? 0;
+  const pitchAverage = features.pitchAverage ?? 0;
+  const waveformMotion = features.waveformMotion ?? 0;
+
+  const goodDetails: string[] = [];
+  if (r.speedMatch >= 75) {
+    goodDetails.push(
+      `尺はお手本${challenge.targetDuration.toFixed(1)}秒に対して${features.duration.toFixed(
+        1
+      )}秒で、テンポ差は${signedSeconds(durationDiff)}に収まっています`
+    );
+  }
+  if (r.intonationMatch >= 70) {
+    goodDetails.push(
+      `声の抑揚は${scoreLabel(r.intonationMatch)}です。ピッチ幅${pitchRange.toFixed(
+        1
+      )}半音、音量レンジ${dynamicRange.toFixed(2)}で、棒読み感は抑えられています`
+    );
+  }
+  if (r.emotionMatch >= 70) {
+    goodDetails.push(
+      `指定感情「${challenge.emotion}」に対して、声量と高さの動きが乗っています`
+    );
+  }
+  if (goodDetails.length === 0) {
+    goodDetails.push(
+      `録音は${features.duration.toFixed(1)}秒あり、採点に必要な声の波形は取れています`
+    );
+  }
+
+  const improvements: string[] = [];
+  if (r.speedMatch < 75) {
+    improvements.push(
+      `読む速さは${signedSeconds(durationDiff)}です。お手本の${challenge.targetDuration.toFixed(
+        1
+      )}秒に近づけると話速スコアが上がります`
+    );
+  }
+  if (silencePct >= 25) {
+    improvements.push(
+      `無音が約${silencePct}%あります。録音開始後すぐ読み始め、語尾のあとも長く空けすぎないのが有効です`
+    );
+  }
+  if (avgVolume < 0.04) {
+    improvements.push(
+      `平均音量が${avgVolume.toFixed(2)}と小さめです。マイクに少し近づくか、最初の一音をはっきり出してください`
+    );
+  }
+  if (pitchRange < 2.5) {
+    improvements.push(
+      `ピッチの上下幅が${pitchRange.toFixed(
+        1
+      )}半音なので、感情の山になる単語だけ少し高低差を付けると似ます`
+    );
+  }
+  if (waveformMotion < 0.01) {
+    improvements.push(
+      `波形の動きが少なめです。声の強弱を一定にせず、強調したい語だけ少し押し出してみてください`
+    );
+  }
+  if (improvements.length === 0) {
+    improvements.push(
+      `次は語尾の長さと息の抜き方をさらにお手本に寄せると、キャラ再現度が伸びます`
+    );
+  }
+
+  const comment =
+    `総合${r.totalScore}点。セリフ再現${r.scriptMatch}点、感情${r.emotionMatch}点、` +
+    `話速${r.speedMatch}点、抑揚${r.intonationMatch}点、キャラ再現${r.characterMatch}点です。` +
+    `録音は${features.duration.toFixed(1)}秒、平均ピッチ${
+      pitchAverage ? `${Math.round(pitchAverage)}Hz` : "未検出"
+    }、無音${silencePct}%として評価しました。`;
+
+  return {
+    goodPoint: goodDetails.join("。"),
+    improvement: improvements.join("。"),
+    comment,
+  };
+}
+
 function buildComment(
   challenge: Challenge,
   r: Omit<ScoreResult, "comment" | "goodPoint" | "improvement" | "title">,
   features: AudioFeatures
 ): { goodPoint: string; improvement: string; comment: string } {
+  return buildDetailedComment(challenge, r, features);
   const parts: { key: string; label: string; val: number }[] = [
     { key: "script", label: "セリフの長さ・発話量", val: r.scriptMatch },
     { key: "emotion", label: `「${challenge.emotion}」の表現`, val: r.emotionMatch },

@@ -58,6 +58,7 @@ export default function Game() {
   const [features, setFeatures] = useState<AudioFeatures | null>(null);
   const [recordUrl, setRecordUrl] = useState<string | null>(null);
   const [waveform, setWaveform] = useState<number[]>([]);
+  const [sampleDuration, setSampleDuration] = useState<number | null>(null);
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -102,7 +103,9 @@ export default function Game() {
   };
 
   const newChallenge = useCallback(() => {
+    stopSample();
     setChallenge((prev) => pickRandomChallenge(prev ?? undefined));
+    setSampleDuration(null);
     setFeatures(null);
     setRecordUrl(null);
     setWaveform([]);
@@ -120,6 +123,7 @@ export default function Game() {
       character: challenge.character,
       emotion: challenge.emotion,
       voiceStyle: challenge.voiceStyle,
+      onduration: setSampleDuration,
       onend: () => setSpeaking(false),
     });
   };
@@ -184,7 +188,11 @@ export default function Game() {
       setAnalyzeStep(step);
       if (step >= ANALYZE_LINES.length) {
         clearInterval(timer);
-        const r = scoreLocally(challenge, f);
+        const scoringChallenge =
+          sampleDuration !== null
+            ? { ...challenge, targetDuration: sampleDuration }
+            : challenge;
+        const r = scoreLocally(scoringChallenge, f);
         setResult(r);
         setTimeout(() => {
           go("result");
@@ -237,11 +245,8 @@ export default function Game() {
   return (
     <div
       className="app-root"
-      style={{
-        backgroundImage: screen === "title" ? "none" : `url(${BG[screen]})`,
-      }}
+      style={{ backgroundImage: `url(${BG[screen]})` }}
     >
-      {screen !== "title" && (
       <div className="sound-ctrl">
         <button className="bgm-toggle" onClick={toggleMute} title="ミュート切り替え">
           {muted || volume <= 0 ? "🔇" : "🔊"}
@@ -258,7 +263,6 @@ export default function Game() {
           aria-label="音量"
         />
       </div>
-      )}
 
       {screen === "title" && (
         <TitleScreen
@@ -273,7 +277,6 @@ export default function Game() {
             sound.playBgm("title");
             go("howto");
           }}
-          onSound={toggleMute}
         />
       )}
 
@@ -350,54 +353,36 @@ function TitleScreen({
   onStart,
   onRanking,
   onHowto,
-  onSound,
 }: {
   onStart: () => void;
   onRanking: () => void;
   onHowto: () => void;
-  onSound: () => void;
 }) {
   return (
-    <div className="title-screen">
-      <div className="title-stage" aria-label="DOPPEL MASTER">
-        <img
-          className="title-screen-image"
-          src="/images/title-screen.png"
-          alt="DOPPEL MASTER"
-        />
-        <button
-          className="title-hotspot title-hotspot-sound"
-          aria-label="sound"
-          onClick={onSound}
-        />
-        <button
-          className="title-hotspot title-hotspot-start"
-          aria-label="start"
-          onClick={onStart}
-        />
-        <button
-          className="title-hotspot title-hotspot-ranking"
-          aria-label="ranking"
-          onClick={onRanking}
-        />
-        <button
-          className="title-hotspot title-hotspot-howto"
-          aria-label="howto"
-          onClick={onHowto}
-        />
-        {false && (
-        <div className="title-menu">
-          <NeonButton variant="cyan" onClick={onStart} sfx="start" fluid>
-            スタート
-          </NeonButton>
-          <NeonButton variant="purple" onClick={onRanking} fluid>
-            ランキング
-          </NeonButton>
-          <NeonButton variant="cyan2" onClick={onHowto} fluid>
-            遊び方
-          </NeonButton>
-        </div>
-        )}
+    <div className="screen">
+      <div className="title-logo">
+        <span className="title-badge">AI VOICE MIMIC BATTLE</span>
+        <h1 className="title-name">
+          <span className="t-doppel">DOPPEL</span>
+          <span className="t-master">MASTER</span>
+        </h1>
+        <p className="title-sub">ドッペルマスター</p>
+      </div>
+      <p className="subcopy">
+        AIの声を聞いて、
+        <br />
+        もう一人の声を演じろ。
+      </p>
+      <div className="stack" style={{ alignItems: "center", marginTop: 6 }}>
+        <NeonButton variant="cyan" onClick={onStart} sfx="start">
+          スタート
+        </NeonButton>
+        <NeonButton variant="purple" onClick={onRanking}>
+          ランキング
+        </NeonButton>
+        <NeonButton variant="cyan2" onClick={onHowto}>
+          遊び方
+        </NeonButton>
       </div>
     </div>
   );

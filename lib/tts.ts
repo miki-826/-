@@ -2,6 +2,7 @@ import { cancelSpeak, speak } from "./speech";
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
+const sampleCache = new Map<string, Blob>();
 
 /** お手本ボイスを停止する（OpenAI音声・ブラウザ音声の両方） */
 export function stopSample() {
@@ -42,10 +43,66 @@ function styleToPitch(voiceStyle: string): number {
   return Math.max(0.5, Math.min(1.8, pitch));
 }
 
+function sampleKey(
+  text: string,
+  character: string,
+  emotion: string,
+  voiceStyle: string,
+  voice: string,
+  speed: number
+): string {
+  return JSON.stringify({ text, character, emotion, voiceStyle, voice, speed });
+}
+
+async function playBlob(
+  blob: Blob,
+  opts: Pick<SampleOpts, "onduration" | "onstart" | "onend">,
+  fallback: () => void
+) {
+  const url = URL.createObjectURL(blob);
+  currentUrl = url;
+  const audio = new Audio(url);
+  currentAudio = audio;
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (currentAudio === audio) currentAudio = null;
+    if (currentUrl === url) {
+      URL.revokeObjectURL(url);
+      currentUrl = null;
+    }
+    opts.onend?.();
+  };
+  audio.onended = finish;
+  audio.onerror = finish;
+  audio.onloadedmetadata = () => {
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      opts.onduration?.(Math.round(audio.duration * 10) / 10);
+    }
+  };
+
+  opts.onstart?.();
+  try {
+    await audio.play();
+  } catch {
+    audio.onended = null;
+    audio.onerror = null;
+    if (currentAudio === audio) currentAudio = null;
+    if (currentUrl === url) {
+      URL.revokeObjectURL(url);
+      currentUrl = null;
+    }
+    fallback();
+  }
+}
+
 export interface SampleOpts {
   character?: string;
   emotion?: string;
   voiceStyle?: string;
+  onduration?: (duration: number) => void;
   onstart?: () => void;
   onend?: () => void;
 }
@@ -61,6 +118,8 @@ export async function playSampleVoice(text: string, opts: SampleOpts = {}) {
   const character = opts.character ?? "";
   const speed = styleToSpeed(voiceStyle);
   const pitch = styleToPitch(voiceStyle);
+  const voice = pickVoice(voiceStyle, emotion);
+  const key = sampleKey(text, character, emotion, voiceStyle, voice, speed);
 
   const fallback = () =>
     speak(text, {
@@ -70,13 +129,19 @@ export async function playSampleVoice(text: string, opts: SampleOpts = {}) {
       onend: opts.onend,
     });
 
+  const cached = sampleCache.get(key);
+  if (cached) {
+    await playBlob(cached, opts, fallback);
+    return;
+  }
+
   try {
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text,
-        voice: pickVoice(voiceStyle, emotion),
+        voice,
         speed,
         instructions:
           `あなたは「${character || "キャラクター"}」です。` +
@@ -103,38 +168,8 @@ export async function playSampleVoice(text: string, opts: SampleOpts = {}) {
       return;
     }
 
-    const url = URL.createObjectURL(blob);
-    currentUrl = url;
-    const audio = new Audio(url);
-    currentAudio = audio;
-
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      if (currentAudio === audio) currentAudio = null;
-      if (currentUrl === url) {
-        URL.revokeObjectURL(url);
-        currentUrl = null;
-      }
-      opts.onend?.();
-    };
-    audio.onended = finish;
-    audio.onerror = finish;
-
-    opts.onstart?.();
-    try {
-      await audio.play();
-    } catch {
-      audio.onended = null;
-      audio.onerror = null;
-      if (currentAudio === audio) currentAudio = null;
-      if (currentUrl === url) {
-        URL.revokeObjectURL(url);
-        currentUrl = null;
-      }
-      fallback();
-    }
+    sampleCache.set(key, blob);
+    await playBlob(blob, opts, fallback);
   } catch (e) {
     console.warn(
       "[ドッペルマスター] TTSの取得に失敗したためブラウザ音声で再生します。",
