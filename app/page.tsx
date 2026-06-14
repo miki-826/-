@@ -9,7 +9,8 @@ import Waveform from "@/components/Waveform";
 import { pickRandomChallenge } from "@/lib/challenges";
 import { scoreLocally } from "@/lib/scoring";
 import { sound } from "@/lib/sound";
-import { AudioCapture, cancelSpeak, speak } from "@/lib/speech";
+import { AudioCapture } from "@/lib/speech";
+import { playSampleVoice, stopSample } from "@/lib/tts";
 import { saveScore, topRanking } from "@/lib/ranking";
 import type {
   AudioFeatures,
@@ -45,21 +46,6 @@ const ANALYZE_LINES = [
   "キャラクター再現度を推定中...",
   "総合スコアを算出中...",
 ];
-
-function styleToProsody(voiceStyle: string): { rate: number; pitch: number } {
-  let rate = 1;
-  let pitch = 1;
-  if (/早口/.test(voiceStyle)) rate += 0.25;
-  if (/ゆっくり|落ち着/.test(voiceStyle)) rate -= 0.25;
-  if (/弱々|消えそう|眠/.test(voiceStyle)) rate -= 0.1;
-  if (/低い|威圧/.test(voiceStyle)) pitch -= 0.3;
-  if (/高い|テンション高|興奮/.test(voiceStyle)) pitch += 0.25;
-  if (/震/.test(voiceStyle)) pitch += 0.1;
-  return {
-    rate: Math.max(0.6, Math.min(1.6, rate)),
-    pitch: Math.max(0.5, Math.min(1.8, pitch)),
-  };
-}
 
 export default function Game() {
   const [screen, setScreen] = useState<Screen>("title");
@@ -129,12 +115,11 @@ export default function Game() {
   // ===== お手本再生 =====
   const playSample = () => {
     if (!challenge || speaking) return;
-    const { rate, pitch } = styleToProsody(challenge.voiceStyle);
     setSpeaking(true);
-    speak(challenge.script, {
-      rate,
-      pitch,
-      onstart: () => setSpeaking(true),
+    playSampleVoice(challenge.script, {
+      character: challenge.character,
+      emotion: challenge.emotion,
+      voiceStyle: challenge.voiceStyle,
       onend: () => setSpeaking(false),
     });
   };
@@ -142,7 +127,7 @@ export default function Game() {
   // ===== 録音 =====
   const startRecording = async () => {
     if (!challenge) return;
-    cancelSpeak();
+    stopSample();
     setSpeaking(false);
     setMicError(false);
     const cap = new AudioCapture();
@@ -237,14 +222,14 @@ export default function Game() {
   };
 
   const retry = () => {
-    cancelSpeak();
+    stopSample();
     newChallenge();
     go("challenge");
     sound.playSfx("whoosh");
   };
 
   const backTitle = () => {
-    cancelSpeak();
+    stopSample();
     captureRef.current?.dispose();
     go("title");
   };
@@ -252,8 +237,11 @@ export default function Game() {
   return (
     <div
       className="app-root"
-      style={{ backgroundImage: `url(${BG[screen]})` }}
+      style={{
+        backgroundImage: screen === "title" ? "none" : `url(${BG[screen]})`,
+      }}
     >
+      {screen !== "title" && (
       <div className="sound-ctrl">
         <button className="bgm-toggle" onClick={toggleMute} title="ミュート切り替え">
           {muted || volume <= 0 ? "🔇" : "🔊"}
@@ -270,6 +258,7 @@ export default function Game() {
           aria-label="音量"
         />
       </div>
+      )}
 
       {screen === "title" && (
         <TitleScreen
@@ -284,6 +273,7 @@ export default function Game() {
             sound.playBgm("title");
             go("howto");
           }}
+          onSound={toggleMute}
         />
       )}
 
@@ -360,18 +350,40 @@ function TitleScreen({
   onStart,
   onRanking,
   onHowto,
+  onSound,
 }: {
   onStart: () => void;
   onRanking: () => void;
   onHowto: () => void;
+  onSound: () => void;
 }) {
   return (
     <div className="title-screen">
       <div className="title-stage" aria-label="DOPPEL MASTER">
         <img
-          className="title-logo"
-          src="/images/title-logo.png"
+          className="title-screen-image"
+          src="/images/title-screen.png"
           alt="DOPPEL MASTER"
+        />
+        <button
+          className="title-hotspot title-hotspot-sound"
+          aria-label="sound"
+          onClick={onSound}
+        />
+        <button
+          className="title-hotspot title-hotspot-start"
+          aria-label="start"
+          onClick={onStart}
+        />
+        <button
+          className="title-hotspot title-hotspot-ranking"
+          aria-label="ranking"
+          onClick={onRanking}
+        />
+        <button
+          className="title-hotspot title-hotspot-howto"
+          aria-label="howto"
+          onClick={onHowto}
         />
         <div className="title-menu">
           <NeonButton variant="cyan" onClick={onStart} sfx="start" fluid>
