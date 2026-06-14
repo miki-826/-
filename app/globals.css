@@ -83,6 +83,50 @@ button {
 }
 
 /* ===== Title ===== */
+.title-screen {
+  width: 100%;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+/* タイトル画像自体を背景にし、枠内にメニューを配置する */
+.title-stage {
+  position: relative;
+  width: min(96vw, 940px);
+  aspect-ratio: 1672 / 941;
+  background: url("/images/title.png") center / contain no-repeat;
+  filter: drop-shadow(0 0 30px rgba(45, 226, 255, 0.4));
+  animation: floaty 5s ease-in-out infinite;
+}
+
+.title-menu {
+  position: absolute;
+  left: 27.5%;
+  right: 27.5%;
+  top: 49%;
+  bottom: 9%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: clamp(5px, 1.4%, 14px);
+}
+
+.title-menu .subcopy {
+  flex: 0 0 auto;
+  font-size: clamp(0.6rem, 2vw, 0.92rem);
+  line-height: 1.55;
+  margin-bottom: clamp(2px, 1%, 8px);
+}
+
+.title-menu .neon-btn {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .title-hero {
   width: 100%;
   max-width: 620px;
@@ -161,6 +205,16 @@ button {
 
 .neon-btn.small .btn-label {
   font-size: 1rem;
+}
+
+.neon-btn.fluid {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+.neon-btn.fluid .btn-label {
+  font-size: clamp(0.78rem, 2.6vw, 1.18rem);
 }
 
 .neon-btn:disabled {
@@ -330,16 +384,17 @@ button {
 /* ===== Score number images ===== */
 .score-digits {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  gap: 2px;
-  height: 120px;
+  gap: 0;
+  height: 124px;
   filter: drop-shadow(0 0 18px rgba(177, 77, 255, 0.55));
 }
 
 .score-digits img {
-  height: 120px;
+  height: 124px;
   width: auto;
+  margin: 0 -8px;
   animation: popIn 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 
@@ -348,7 +403,7 @@ button {
   font-size: 2rem;
   font-weight: 800;
   color: var(--cyan);
-  margin-left: 6px;
+  margin-left: 12px;
   text-shadow: 0 0 12px rgba(45, 226, 255, 0.7);
 }
 
@@ -364,10 +419,11 @@ button {
 }
 
 .score-digits.mini img {
-  height: 38px;
+  height: 40px;
+  margin: 0 -3px;
 }
 .score-digits.mini {
-  height: 38px;
+  height: 40px;
   gap: 0;
   filter: drop-shadow(0 0 8px rgba(177, 77, 255, 0.5));
 }

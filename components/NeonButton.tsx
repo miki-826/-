@@ -16,6 +16,7 @@ export default function NeonButton({
   onClick,
   variant = "cyan",
   small = false,
+  fluid = false,
   disabled = false,
   sfx = "click",
 }: {
@@ -23,12 +24,13 @@ export default function NeonButton({
   onClick?: () => void;
   variant?: Variant;
   small?: boolean;
+  fluid?: boolean;
   disabled?: boolean;
   sfx?: Parameters<typeof sound.playSfx>[0] | null;
 }) {
   return (
     <button
-      className={`neon-btn${small ? " small" : ""}`}
+      className={`neon-btn${small ? " small" : ""}${fluid ? " fluid" : ""}`}
       disabled={disabled}
       onClick={() => {
         if (disabled) return;

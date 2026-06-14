@@ -367,23 +367,22 @@ function TitleScreen({
   onHowto: () => void;
 }) {
   return (
-    <div className="screen">
-      <img className="title-hero" src="/images/title.png" alt="ドッペルマスター" />
-      <p className="subcopy">
-        AIの声を聞いて、
-        <br />
-        もう一人の声を演じろ。
-      </p>
-      <div className="stack" style={{ alignItems: "center", marginTop: 6 }}>
-        <NeonButton variant="cyan" onClick={onStart} sfx="start">
-          スタート
-        </NeonButton>
-        <NeonButton variant="purple" onClick={onRanking}>
-          ランキング
-        </NeonButton>
-        <NeonButton variant="cyan2" onClick={onHowto}>
-          遊び方
-        </NeonButton>
+    <div className="title-screen">
+      <div className="title-stage">
+        <div className="title-menu">
+          <p className="subcopy">
+            AIの声を聞いて、もう一人の声を演じろ。
+          </p>
+          <NeonButton variant="cyan" onClick={onStart} sfx="start" fluid>
+            スタート
+          </NeonButton>
+          <NeonButton variant="purple" onClick={onRanking} fluid>
+            ランキング
+          </NeonButton>
+          <NeonButton variant="cyan2" onClick={onHowto} fluid>
+            遊び方
+          </NeonButton>
+        </div>
       </div>
     </div>
   );
