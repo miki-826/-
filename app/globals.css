@@ -84,47 +84,50 @@ button {
 
 /* ===== Title ===== */
 .title-screen {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 3vw, 36px);
+  overflow: hidden;
 }
 
 /* タイトル画像自体を背景にし、枠内にメニューを配置する */
 .title-stage {
   position: relative;
-  width: min(96vw, 940px);
-  aspect-ratio: 1672 / 941;
-  background: url("/images/title.png") center / contain no-repeat;
-  filter: drop-shadow(0 0 30px rgba(45, 226, 255, 0.4));
-  animation: floaty 5s ease-in-out infinite;
+  width: min(94vw, 980px);
+  height: min(86dvh, 760px);
+  min-height: 560px;
+  max-height: calc(100dvh - 36px);
+  background: url("/images/title-frame.png") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 0 30px rgba(45, 226, 255, 0.38));
+}
+
+.title-logo {
+  position: absolute;
+  left: 50%;
+  top: 11%;
+  width: min(84%, 800px);
+  height: auto;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 0 22px rgba(45, 226, 255, 0.5));
 }
 
 .title-menu {
   position: absolute;
-  left: 27.5%;
-  right: 27.5%;
-  top: 49%;
-  bottom: 9%;
+  left: 50%;
+  top: 62%;
+  width: min(42%, 360px);
+  min-width: 260px;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
-  gap: clamp(5px, 1.4%, 14px);
-}
-
-.title-menu .subcopy {
-  flex: 0 0 auto;
-  font-size: clamp(0.6rem, 2vw, 0.92rem);
-  line-height: 1.55;
-  margin-bottom: clamp(2px, 1%, 8px);
-}
-
-.title-menu .neon-btn {
-  flex: 1 1 0;
-  min-height: 0;
+  justify-content: flex-start;
+  gap: clamp(8px, 1.4dvh, 14px);
 }
 
 .title-hero {
@@ -215,6 +218,11 @@ button {
 
 .neon-btn.fluid .btn-label {
   font-size: clamp(0.78rem, 2.6vw, 1.18rem);
+}
+
+.title-menu .neon-btn.fluid {
+  flex: 0 0 clamp(54px, 8dvh, 72px);
+  height: clamp(54px, 8dvh, 72px);
 }
 
 .neon-btn:disabled {
@@ -409,18 +417,32 @@ button {
 
 /* ===== Score number images ===== */
 .score-digits {
+  --digit-height: 124px;
+  --digit-width: 74px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0;
-  height: 124px;
+  height: var(--digit-height);
+  max-width: 100%;
   filter: drop-shadow(0 0 18px rgba(177, 77, 255, 0.55));
 }
 
+.score-digit-slot {
+  width: var(--digit-width);
+  height: var(--digit-height);
+  flex: 0 0 var(--digit-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
 .score-digits img {
-  height: 124px;
+  height: var(--digit-height);
   width: auto;
-  margin: 0 -8px;
+  margin: 0;
+  max-width: none;
   animation: popIn 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 
@@ -444,12 +466,10 @@ button {
   }
 }
 
-.score-digits.mini img {
-  height: 40px;
-  margin: 0 -3px;
-}
 .score-digits.mini {
-  height: 40px;
+  --digit-height: 40px;
+  --digit-width: 25px;
+  height: var(--digit-height);
   gap: 0;
   filter: drop-shadow(0 0 8px rgba(177, 77, 255, 0.5));
 }
@@ -685,10 +705,51 @@ button {
   gap: 6px;
 }
 
+@media (max-width: 720px) {
+  .title-stage {
+    width: min(96vw, 560px);
+    height: min(88dvh, 720px);
+    min-height: 540px;
+  }
+
+  .title-logo {
+    top: 14%;
+    width: 92%;
+  }
+
+  .title-menu {
+    top: 59%;
+    width: min(72%, 330px);
+    min-width: 0;
+  }
+}
+
 @media (max-width: 480px) {
-  .score-digits img,
   .score-digits {
-    height: 92px;
+    --digit-height: 92px;
+    --digit-width: 55px;
+  }
+  .score-digits.mini {
+    --digit-height: 40px;
+    --digit-width: 25px;
+  }
+  .title-screen {
+    padding: 14px 8px;
+  }
+  .title-stage {
+    min-height: 520px;
+  }
+  .title-logo {
+    top: 15%;
+    width: 98%;
+  }
+  .title-menu {
+    top: 60%;
+    width: min(78%, 310px);
+  }
+  .title-menu .neon-btn.fluid {
+    flex-basis: 54px;
+    height: 54px;
   }
   .screen-heading {
     font-size: 1.3rem;

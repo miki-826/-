@@ -13,12 +13,13 @@ export default function ScoreDigits({
   return (
     <div className={`score-digits${mini ? " mini" : ""}`}>
       {digits.map((d, i) => (
-        <img
-          key={i}
-          src={`/images/numbers/${d}.png`}
-          alt={d}
-          style={{ animationDelay: `${i * 0.08}s` }}
-        />
+        <span className="score-digit-slot" key={`${d}-${i}`}>
+          <img
+            src={`/images/numbers/${d}.png`}
+            alt={d}
+            style={{ animationDelay: `${i * 0.08}s` }}
+          />
+        </span>
       ))}
       {suffix && <span className="suffix">{suffix}</span>}
     </div>

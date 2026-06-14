@@ -47,11 +47,40 @@ export function speedScore(target: number, actual: number): number {
   return clamp(100 - Math.abs(target - actual) * 15);
 }
 
+function pitchHeightScore(features: AudioFeatures): number {
+  const pitch = features.pitchAverage ?? 0;
+  if (!pitch) return 45;
+  const lowPenalty = Math.max(0, 90 - pitch) * 0.9;
+  const highPenalty = Math.max(0, pitch - 360) * 0.55;
+  return clamp(100 - lowPenalty - highPenalty, 35, 100);
+}
+
 export function intonationScore(features: AudioFeatures): number {
-  // 音量変化が大きいほど抑揚があるとみなす（MVP簡易版）
   const variance = features.volumeVariance ?? 0;
-  const raw = (variance / 0.35) * 100;
-  return clamp(raw, 5, 100);
+  const dynamicRange = features.volumeDynamicRange ?? variance;
+  const waveformMotion = features.waveformMotion ?? 0;
+  const pitchRange = features.pitchRange ?? 0;
+  const pitchVariation = features.pitchVariation ?? 0;
+
+  const volumeExpression = clamp(
+    (variance / 0.12) * 40 +
+      (dynamicRange / 0.22) * 40 +
+      (waveformMotion / 0.035) * 20
+  );
+  const pitchExpression = clamp(
+    (pitchRange / 7) * 65 + (pitchVariation / 4.2) * 35
+  );
+  const pitchHeight = pitchHeightScore(features);
+  const continuity = clamp((1 - features.silenceRatio) * 100);
+
+  return clamp(
+    volumeExpression * 0.34 +
+      pitchExpression * 0.34 +
+      pitchHeight * 0.18 +
+      continuity * 0.14,
+    5,
+    100
+  );
 }
 
 const TITLES: { min: number; title: string }[] = [
@@ -73,13 +102,21 @@ function emotionScoreLocal(
   challenge: Challenge,
   scriptMatch: number
 ): number {
-  // セリフが合っていて、ある程度の音量と抑揚があれば感情も乗っていると推定
-  const energy = clamp((features.averageVolume / 0.55) * 100, 0, 100);
-  const expr = intonationScore(features);
-  const base = scriptMatch * 0.35 + energy * 0.35 + expr * 0.3;
+  const peak = features.volumePeak ?? features.averageVolume;
+  const measuredEnergy = clamp(
+    ((features.averageVolume * 0.55 + peak * 0.45) / 0.12) * 100
+  );
+  const prosody = intonationScore(features);
+  const pitchHeight = pitchHeightScore(features);
+  const newBase =
+    scriptMatch * 0.24 +
+    measuredEnergy * 0.24 +
+    prosody * 0.36 +
+    pitchHeight * 0.16;
   const lowEmotion = /疲労|眠気|落ち着き|余韻/.test(challenge.emotion);
-  // 低テンション系のお題は音量控えめでも減点しすぎない
-  const adjusted = lowEmotion ? base * 0.6 + (100 - energy) * 0.4 : base;
+  const adjusted = lowEmotion
+    ? newBase * 0.72 + (100 - measuredEnergy) * 0.28
+    : newBase;
   return clamp(adjusted);
 }
 
@@ -149,12 +186,13 @@ function speechMatchFromAudio(
   speedMatch: number
 ): number {
   const voiceActivity = clamp((1 - features.silenceRatio) * 100);
-  return clamp(voiceActivity * 0.6 + speedMatch * 0.4);
+  const articulation = clamp(((features.waveformMotion ?? 0) / 0.035) * 100);
+  return clamp(voiceActivity * 0.45 + speedMatch * 0.35 + articulation * 0.2);
 }
 
 /**
  * ローカル採点。OpenAI APIキー不要・文字起こし不要で動作するMVP実装。
- * 録音した音声の特徴量（長さ・音量・音量変化・無音率）だけで採点する。
+ * 録音した音声の特徴量（長さ・音量波形・抑揚・ピッチ・無音率）だけで採点する。
  */
 export function scoreLocally(
   challenge: Challenge,

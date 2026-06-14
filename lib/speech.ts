@@ -40,6 +40,50 @@ export interface RecognitionHandle {
   stop: () => void;
 }
 
+function estimatePitch(buffer: Float32Array, sampleRate: number): number | null {
+  let rms = 0;
+  for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
+  rms = Math.sqrt(rms / buffer.length);
+  if (rms < 0.015) return null;
+
+  const minLag = Math.floor(sampleRate / 450);
+  const maxLag = Math.min(Math.floor(sampleRate / 75), buffer.length - 1);
+  let bestLag = -1;
+  let bestCorrelation = 0;
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    let e1 = 0;
+    let e2 = 0;
+    const len = buffer.length - lag;
+    for (let i = 0; i < len; i++) {
+      const a = buffer[i];
+      const b = buffer[i + lag];
+      sum += a * b;
+      e1 += a * a;
+      e2 += b * b;
+    }
+    const correlation = sum / Math.sqrt(e1 * e2 || 1);
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestLag = lag;
+    }
+  }
+
+  if (bestLag < 0 || bestCorrelation < 0.5) return null;
+  return sampleRate / bestLag;
+}
+
+function percentile(values: number[], ratio: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.round((sorted.length - 1) * ratio))
+  );
+  return sorted[index];
+}
+
 export function startRecognition(
   onResult: (text: string, isFinal: boolean) => void,
   onError?: () => void
@@ -94,6 +138,7 @@ export class AudioCapture {
   private totalFrames = 0;
   private startTime = 0;
   private blobUrl: string | null = null;
+  private pitchSamples: number[] = [];
 
   onLevel: ((level: number) => void) | null = null;
 
@@ -102,6 +147,7 @@ export class AudioCapture {
     this.stream = stream;
     this.chunks = [];
     this.samples = [];
+    this.pitchSamples = [];
     this.silentFrames = 0;
     this.totalFrames = 0;
     this.recorder = new MediaRecorder(stream);
@@ -118,20 +164,22 @@ export class AudioCapture {
     const source = audioCtx.createMediaStreamSource(stream);
     const analyser = audioCtx.createAnalyser();
     this.analyser = analyser;
-    analyser.fftSize = 512;
+    analyser.fftSize = 2048;
     source.connect(analyser);
-    const data = new Uint8Array(analyser.frequencyBinCount);
+    const data = new Float32Array(analyser.fftSize);
 
     const tick = () => {
       if (!this.analyser) return;
-      this.analyser.getByteTimeDomainData(data);
+      this.analyser.getFloatTimeDomainData(data);
       let sum = 0;
       for (let i = 0; i < data.length; i++) {
-        const v = (data[i] - 128) / 128;
+        const v = data[i];
         sum += v * v;
       }
       const rms = Math.sqrt(sum / data.length);
       this.samples.push(rms);
+      const pitch = estimatePitch(data, audioCtx.sampleRate);
+      if (pitch !== null && rms > 0.02) this.pitchSamples.push(pitch);
       this.totalFrames++;
       if (rms < 0.02) this.silentFrames++;
       this.onLevel?.(Math.min(1, rms * 3));
@@ -193,6 +241,38 @@ export class AudioCapture {
         : 0;
     const silenceRatio =
       this.totalFrames > 0 ? this.silentFrames / this.totalFrames : 0;
+    const voicedSamples = this.samples.filter((sample) => sample >= 0.02);
+    const volumePeak = percentile(this.samples, 0.95);
+    const volumeDynamicRange =
+      voicedSamples.length > 0
+        ? percentile(voicedSamples, 0.9) - percentile(voicedSamples, 0.1)
+        : 0;
+    const waveformMotion =
+      this.samples.length > 1
+        ? this.samples
+            .slice(1)
+            .reduce((sum, sample, i) => sum + Math.abs(sample - this.samples[i]), 0) /
+          (this.samples.length - 1)
+        : 0;
+    const pitchAverage =
+      this.pitchSamples.length > 0
+        ? this.pitchSamples.reduce((a, b) => a + b, 0) /
+          this.pitchSamples.length
+        : 0;
+    const pitchSemitones = this.pitchSamples.map(
+      (pitch) => 12 * Math.log2(pitch / Math.max(1, pitchAverage || pitch))
+    );
+    const pitchRange =
+      pitchSemitones.length > 0
+        ? percentile(pitchSemitones, 0.9) - percentile(pitchSemitones, 0.1)
+        : 0;
+    const pitchVariation =
+      pitchSemitones.length > 0
+        ? Math.sqrt(
+            pitchSemitones.reduce((sum, value) => sum + value ** 2, 0) /
+              pitchSemitones.length
+          )
+        : 0;
 
     this.blobUrl = URL.createObjectURL(blob);
 
@@ -201,6 +281,12 @@ export class AudioCapture {
       averageVolume: Math.round(avg * 100) / 100,
       volumeVariance: Math.round(variance * 100) / 100,
       silenceRatio: Math.round(silenceRatio * 100) / 100,
+      volumePeak: Math.round(volumePeak * 100) / 100,
+      volumeDynamicRange: Math.round(volumeDynamicRange * 100) / 100,
+      waveformMotion: Math.round(waveformMotion * 100) / 100,
+      pitchAverage: Math.round(pitchAverage),
+      pitchRange: Math.round(pitchRange * 10) / 10,
+      pitchVariation: Math.round(pitchVariation * 10) / 10,
     };
     return { features, url: this.blobUrl, waveform: this.buildWaveform() };
   }

@@ -14,6 +14,12 @@ export interface AudioFeatures {
   averageVolume: number;
   volumeVariance: number;
   silenceRatio: number;
+  volumePeak?: number;
+  volumeDynamicRange?: number;
+  waveformMotion?: number;
+  pitchAverage?: number;
+  pitchRange?: number;
+  pitchVariation?: number;
 }
 
 export interface ScoreResult {

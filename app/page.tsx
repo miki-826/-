@@ -367,11 +367,13 @@ function TitleScreen({
 }) {
   return (
     <div className="title-screen">
-      <div className="title-stage">
+      <div className="title-stage" aria-label="DOPPEL MASTER">
+        <img
+          className="title-logo"
+          src="/images/title-logo.png"
+          alt="DOPPEL MASTER"
+        />
         <div className="title-menu">
-          <p className="subcopy">
-            AIの声を聞いて、もう一人の声を演じろ。
-          </p>
           <NeonButton variant="cyan" onClick={onStart} sfx="start" fluid>
             スタート
           </NeonButton>
