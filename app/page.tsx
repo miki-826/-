@@ -5,18 +5,12 @@ import NeonButton from "@/components/NeonButton";
 import ScoreDigits from "@/components/ScoreDigits";
 import RadarChart from "@/components/RadarChart";
 import WaveVisualizer from "@/components/WaveVisualizer";
+import Waveform from "@/components/Waveform";
 import { pickRandomChallenge } from "@/lib/challenges";
 import { scoreLocally } from "@/lib/scoring";
 import { sound } from "@/lib/sound";
-import {
-  AudioCapture,
-  cancelSpeak,
-  isSpeechRecognitionSupported,
-  speak,
-  startRecognition,
-  type RecognitionHandle,
-} from "@/lib/speech";
-import { loadRanking, saveScore, topRanking } from "@/lib/ranking";
+import { AudioCapture, cancelSpeak, speak } from "@/lib/speech";
+import { saveScore, topRanking } from "@/lib/ranking";
 import type {
   AudioFeatures,
   Challenge,
@@ -45,7 +39,7 @@ const BG: Record<Screen, string> = {
 
 const ANALYZE_LINES = [
   "音声波形を読み込み中...",
-  "文字起こしを照合中...",
+  "発話量・無音区間を解析中...",
   "話速を計測中...",
   "音量変化から抑揚を解析中...",
   "キャラクター再現度を推定中...",
@@ -75,25 +69,22 @@ export default function Game() {
     "idle"
   );
   const [level, setLevel] = useState(0);
-  const [transcript, setTranscript] = useState("");
-  const [manualText, setManualText] = useState("");
   const [features, setFeatures] = useState<AudioFeatures | null>(null);
   const [recordUrl, setRecordUrl] = useState<string | null>(null);
+  const [waveform, setWaveform] = useState<number[]>([]);
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [savedId, setSavedId] = useState<string | null>(null);
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [analyzeStep, setAnalyzeStep] = useState(0);
   const [muted, setMuted] = useState(false);
-  const [recSupported, setRecSupported] = useState(true);
+  const [volume, setVolume] = useState(0.7);
   const [micError, setMicError] = useState(false);
   const [started, setStarted] = useState(false);
 
   const captureRef = useRef<AudioCapture | null>(null);
-  const recognitionRef = useRef<RecognitionHandle | null>(null);
 
   useEffect(() => {
-    setRecSupported(isSpeechRecognitionSupported());
     // 音声リスト読み込みを促す
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.getVoices();
@@ -126,12 +117,12 @@ export default function Game() {
 
   const newChallenge = useCallback(() => {
     setChallenge((prev) => pickRandomChallenge(prev ?? undefined));
-    setTranscript("");
-    setManualText("");
     setFeatures(null);
     setRecordUrl(null);
+    setWaveform([]);
     setResult(null);
     setSavedId(null);
+    setMicError(false);
     setRecState("idle");
   }, []);
 
@@ -154,7 +145,6 @@ export default function Game() {
     cancelSpeak();
     setSpeaking(false);
     setMicError(false);
-    setTranscript("");
     const cap = new AudioCapture();
     cap.onLevel = (l) => setLevel(l);
     try {
@@ -166,26 +156,19 @@ export default function Game() {
     captureRef.current = cap;
     sound.playSfx("record-start");
     setRecState("recording");
-    if (recSupported) {
-      recognitionRef.current = startRecognition(
-        (text) => setTranscript(text),
-        () => {}
-      );
-    }
   };
 
   const stopRecording = async () => {
     const cap = captureRef.current;
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
     sound.playSfx("record-stop");
     if (!cap) {
       setRecState("recorded");
       return;
     }
-    const { features: f, url } = await cap.stop();
+    const { features: f, url, waveform: wf } = await cap.stop();
     setFeatures(f);
     setRecordUrl(url);
+    setWaveform(wf);
     setLevel(0);
     setRecState("recorded");
   };
@@ -199,7 +182,6 @@ export default function Game() {
   // ===== 採点 =====
   const runScoring = () => {
     if (!challenge) return;
-    const finalTranscript = (recSupported && transcript ? transcript : manualText).trim();
     const f: AudioFeatures =
       features ?? {
         duration: challenge.targetDuration,
@@ -217,7 +199,7 @@ export default function Game() {
       setAnalyzeStep(step);
       if (step >= ANALYZE_LINES.length) {
         clearInterval(timer);
-        const r = scoreLocally(challenge, finalTranscript, f);
+        const r = scoreLocally(challenge, f);
         setResult(r);
         setTimeout(() => {
           go("result");
@@ -230,22 +212,28 @@ export default function Game() {
   };
 
   // ===== ランキング =====
-  const register = () => {
+  const register = async () => {
     if (!challenge || !result) return;
-    const entry = saveScore(playerName, result, challenge);
-    setSavedId(entry.id);
-    setRanking(topRanking(10));
     sound.playSfx("success");
+    const entry = await saveScore(playerName, result, challenge);
+    setSavedId(entry.id);
+    setRanking(await topRanking(10));
     go("ranking");
   };
 
-  const openRanking = () => {
-    setRanking(topRanking(10));
+  const openRanking = async () => {
     go("ranking");
+    setRanking(await topRanking(10));
   };
 
   const toggleMute = () => {
     setMuted(sound.toggleMute());
+  };
+
+  const changeVolume = (v: number) => {
+    setVolume(v);
+    sound.setMaster(v);
+    setMuted(v <= 0);
   };
 
   const retry = () => {
@@ -266,9 +254,22 @@ export default function Game() {
       className="app-root"
       style={{ backgroundImage: `url(${BG[screen]})` }}
     >
-      <button className="bgm-toggle" onClick={toggleMute} title="BGM切り替え">
-        {muted ? "🔇" : "🔊"}
-      </button>
+      <div className="sound-ctrl">
+        <button className="bgm-toggle" onClick={toggleMute} title="ミュート切り替え">
+          {muted || volume <= 0 ? "🔇" : "🔊"}
+        </button>
+        <input
+          className="vol-slider"
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={muted ? 0 : volume}
+          onChange={(e) => changeVolume(parseFloat(e.target.value))}
+          title="音量"
+          aria-label="音量"
+        />
+      </div>
 
       {screen === "title" && (
         <TitleScreen
@@ -286,7 +287,7 @@ export default function Game() {
         />
       )}
 
-      {screen === "howto" && <HowtoScreen onBack={() => go("title")} recSupported={recSupported} />}
+      {screen === "howto" && <HowtoScreen onBack={() => go("title")} />}
 
       {screen === "challenge" && challenge && (
         <ChallengeScreen
@@ -308,10 +309,7 @@ export default function Game() {
           speaking={speaking}
           recState={recState}
           level={level}
-          transcript={transcript}
-          manualText={manualText}
-          setManualText={setManualText}
-          recSupported={recSupported}
+          waveform={waveform}
           micError={micError}
           onPlaySample={playSample}
           onStart={startRecording}
@@ -330,6 +328,7 @@ export default function Game() {
         <ResultScreen
           challenge={challenge}
           result={result}
+          waveform={waveform}
           playerName={playerName}
           setPlayerName={setPlayerName}
           saved={savedId !== null}
@@ -388,13 +387,7 @@ function TitleScreen({
   );
 }
 
-function HowtoScreen({
-  onBack,
-  recSupported,
-}: {
-  onBack: () => void;
-  recSupported: boolean;
-}) {
+function HowtoScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className="screen">
       <h1 className="screen-heading">遊び方</h1>
@@ -415,12 +408,10 @@ function HowtoScreen({
           <br />
           録音データは採点のためだけに使用し、ブラウザ内で破棄されます（保存されません）。
         </p>
-        {!recSupported && (
-          <p className="note" style={{ marginTop: 12, borderColor: "#ff3df0" }}>
-            お使いのブラウザは音声認識に対応していません。Chrome推奨です。
-            未対応の場合は、録音後にテキスト入力で採点できます。
-          </p>
-        )}
+        <p className="note" style={{ marginTop: 12 }}>
+          採点は録音した声の波形（長さ・音量・抑揚）をもとに行います。文字起こしは行いません。
+          マイクの使用を許可してください（Chrome推奨）。
+        </p>
       </div>
       <NeonButton variant="purple" onClick={onBack}>
         タイトルへ
@@ -490,10 +481,7 @@ function RecordScreen({
   speaking,
   recState,
   level,
-  transcript,
-  manualText,
-  setManualText,
-  recSupported,
+  waveform,
   micError,
   onPlaySample,
   onStart,
@@ -506,10 +494,7 @@ function RecordScreen({
   speaking: boolean;
   recState: "idle" | "recording" | "recorded";
   level: number;
-  transcript: string;
-  manualText: string;
-  setManualText: (s: string) => void;
-  recSupported: boolean;
+  waveform: number[];
   micError: boolean;
   onPlaySample: () => void;
   onStart: () => void;
@@ -519,8 +504,6 @@ function RecordScreen({
   onBack: () => void;
 }) {
   const ready = recState === "recorded" || micError;
-  const needManual = ready && (!recSupported || !transcript.trim());
-  const canScore = ready && (transcript.trim() !== "" || manualText.trim() !== "");
 
   return (
     <div className="screen">
@@ -534,9 +517,15 @@ function RecordScreen({
             <span className="rec-dot" /> 録音中...
           </div>
         )}
+        {recState === "recorded" && waveform.length > 0 && (
+          <div className="full" style={{ marginTop: 8 }}>
+            <p className="wave-label">録音した声の波形</p>
+            <Waveform data={waveform} height={80} />
+          </div>
+        )}
         {micError && (
           <p className="note" style={{ borderColor: "#ff3df0", marginTop: 10 }}>
-            マイクを使用できませんでした。下のテキスト入力で採点に進めます。
+            マイクを使用できませんでした。マイクを許可するか、このまま採点に進めます。
           </p>
         )}
       </div>
@@ -564,30 +553,7 @@ function RecordScreen({
             </NeonButton>
           )}
 
-          {recSupported && transcript.trim() && (
-            <div className="full">
-              <p className="hint">認識結果：</p>
-              <div className="transcript-box">{transcript}</div>
-            </div>
-          )}
-
-          {needManual && (
-            <div className="full gap8">
-              <p className="note">
-                {recSupported
-                  ? "音声認識に失敗しました。読んだ内容をテキストで入力してください。"
-                  : "このブラウザは音声認識に未対応です。読んだ内容を入力してください。"}
-              </p>
-              <input
-                className="text-input"
-                value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
-                placeholder={challenge.script}
-              />
-            </div>
-          )}
-
-          <NeonButton variant="cyan" onClick={onScore} disabled={!canScore}>
+          <NeonButton variant="cyan" onClick={onScore}>
             採点する
           </NeonButton>
         </div>
@@ -622,6 +588,7 @@ function AnalyzingScreen({ step }: { step: number }) {
 function ResultScreen({
   challenge,
   result,
+  waveform,
   playerName,
   setPlayerName,
   saved,
@@ -631,6 +598,7 @@ function ResultScreen({
 }: {
   challenge: Challenge;
   result: ScoreResult;
+  waveform: number[];
   playerName: string;
   setPlayerName: (s: string) => void;
   saved: boolean;
@@ -650,6 +618,13 @@ function ResultScreen({
       <h1 className="screen-heading">結果</h1>
       <ScoreDigits value={result.totalScore} />
       <p className="rank-title">{result.title}</p>
+
+      {waveform.length > 0 && (
+        <div className="panel">
+          <p className="wave-label">あなたの声の波形</p>
+          <Waveform data={waveform} height={88} />
+        </div>
+      )}
 
       <div className="panel">
         <div className="radar-wrap">

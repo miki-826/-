@@ -103,7 +103,7 @@ function buildComment(
   features: AudioFeatures
 ): { goodPoint: string; improvement: string; comment: string } {
   const parts: { key: string; label: string; val: number }[] = [
-    { key: "script", label: "セリフの再現", val: r.scriptMatch },
+    { key: "script", label: "セリフの長さ・発話量", val: r.scriptMatch },
     { key: "emotion", label: `「${challenge.emotion}」の表現`, val: r.emotionMatch },
     { key: "speed", label: "話す速さ", val: r.speedMatch },
     { key: "into", label: "声の抑揚", val: r.intonationMatch },
@@ -123,7 +123,10 @@ function buildComment(
   } else if (worst.key === "into") {
     improvement = "声の上がり下がりをもう少し大きくつけると、さらに似ます。";
   } else if (worst.key === "script") {
-    improvement = "セリフをもう少しはっきり読むと一致度が上がります。";
+    improvement =
+      features.silenceRatio > 0.4
+        ? "無音が多めでした。セリフをしっかり最後まで読むと上がります。"
+        : "発話量がお手本と少しズレていました。長さを合わせてみましょう。";
   } else if (worst.key === "emotion") {
     improvement = `「${challenge.emotion}」の感情をもう一歩のせてみましょう。`;
   } else {
@@ -140,16 +143,25 @@ function buildComment(
   return { goodPoint, improvement, comment };
 }
 
+/** 発話量（無音率と話速）からセリフ再現度を推定する（文字起こし不要） */
+function speechMatchFromAudio(
+  features: AudioFeatures,
+  speedMatch: number
+): number {
+  const voiceActivity = clamp((1 - features.silenceRatio) * 100);
+  return clamp(voiceActivity * 0.6 + speedMatch * 0.4);
+}
+
 /**
- * ローカル採点。OpenAI APIキー不要で動作するMVP実装。
+ * ローカル採点。OpenAI APIキー不要・文字起こし不要で動作するMVP実装。
+ * 録音した音声の特徴量（長さ・音量・音量変化・無音率）だけで採点する。
  */
 export function scoreLocally(
   challenge: Challenge,
-  userTranscript: string,
   features: AudioFeatures
 ): ScoreResult {
-  const scriptMatch = scriptSimilarity(challenge.script, userTranscript);
   const speedMatch = speedScore(challenge.targetDuration, features.duration);
+  const scriptMatch = speechMatchFromAudio(features, speedMatch);
   const intonationMatch = intonationScore(features);
   const emotionMatch = emotionScoreLocal(features, challenge, scriptMatch);
   const characterMatch = characterScoreLocal(

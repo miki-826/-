@@ -26,10 +26,25 @@ class SoundManager {
   private current: BgmName | null = null;
   private sfxCache = new Map<SfxName, HTMLAudioElement>();
   private _muted = false;
-  private bgmVolume = 0.45;
+  private _master = 0.7; // 0〜1 のマスター音量
+  private bgmRatio = 0.6; // BGMはマスターに対して控えめ
 
   get muted() {
     return this._muted;
+  }
+
+  get master() {
+    return this._master;
+  }
+
+  private get bgmVolume() {
+    return this._master * this.bgmRatio;
+  }
+
+  setMaster(v: number) {
+    this._master = Math.max(0, Math.min(1, v));
+    if (this._master > 0) this._muted = false;
+    if (this.bgm) this.bgm.volume = this._muted ? 0 : this.bgmVolume;
   }
 
   private ensureBgm() {
@@ -79,8 +94,8 @@ class SoundManager {
     return this._muted;
   }
 
-  playSfx(name: SfxName, volume = 0.7) {
-    if (this._muted || typeof Audio === "undefined") return;
+  playSfx(name: SfxName, volume = 1) {
+    if (this._muted || this._master <= 0 || typeof Audio === "undefined") return;
     let base = this.sfxCache.get(name);
     if (!base) {
       base = new Audio(`/sfx/${name}.mp3`);
@@ -88,7 +103,7 @@ class SoundManager {
     }
     // 連打対応のため複製して再生
     const clone = base.cloneNode(true) as HTMLAudioElement;
-    clone.volume = volume;
+    clone.volume = Math.max(0, Math.min(1, volume * this._master));
     clone.play().catch(() => {});
   }
 }

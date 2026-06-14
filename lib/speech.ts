@@ -140,7 +140,29 @@ export class AudioCapture {
     tick();
   }
 
-  async stop(): Promise<{ features: AudioFeatures; url: string }> {
+  /** 録音全体の音量サンプルを指定点数にダウンサンプルした波形 */
+  private buildWaveform(points = 80): number[] {
+    if (this.samples.length === 0) return Array(points).fill(0);
+    const peak = Math.max(0.05, ...this.samples);
+    const out: number[] = [];
+    const bucket = this.samples.length / points;
+    for (let i = 0; i < points; i++) {
+      const start = Math.floor(i * bucket);
+      const end = Math.max(start + 1, Math.floor((i + 1) * bucket));
+      let max = 0;
+      for (let j = start; j < end && j < this.samples.length; j++) {
+        if (this.samples[j] > max) max = this.samples[j];
+      }
+      out.push(Math.min(1, max / peak));
+    }
+    return out;
+  }
+
+  async stop(): Promise<{
+    features: AudioFeatures;
+    url: string;
+    waveform: number[];
+  }> {
     const duration = (performance.now() - this.startTime) / 1000;
     if (this.rafId) cancelAnimationFrame(this.rafId);
 
@@ -180,7 +202,7 @@ export class AudioCapture {
       volumeVariance: Math.round(variance * 100) / 100,
       silenceRatio: Math.round(silenceRatio * 100) / 100,
     };
-    return { features, url: this.blobUrl };
+    return { features, url: this.blobUrl, waveform: this.buildWaveform() };
   }
 
   dispose() {
