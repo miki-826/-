@@ -2,9 +2,35 @@ import type { RankingEntry, ScoreResult, Challenge } from "./types";
 
 const KEY = "doppel-master-ranking";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const useSupabase = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+// 一度でも失敗（テーブル未作成404など）したらlocalStorageに切り替えて再試行しない
+let supabaseDisabled = false;
+let warnedOnce = false;
+
+function shouldUseSupabase(): boolean {
+  return !!(SUPABASE_URL && SUPABASE_ANON_KEY) && !supabaseDisabled;
+}
+
+function disableSupabase(status?: number) {
+  supabaseDisabled = true;
+  if (warnedOnce) return;
+  warnedOnce = true;
+  if (status === 404) {
+    console.warn(
+      "[ドッペルマスター] Supabaseの scores テーブルが見つかりません(404)。" +
+        " READMEのSQLでテーブルを作成してください。" +
+        " それまではランキングをこの端末内(localStorage)に保存します。"
+    );
+  } else {
+    console.warn(
+      "[ドッペルマスター] Supabaseに接続できませんでした" +
+        (status ? `(HTTP ${status})` : "") +
+        "。ランキングをこの端末内(localStorage)に保存します。"
+    );
+  }
+}
 
 function sortRanking(list: RankingEntry[]): RankingEntry[] {
   return [...list].sort((a, b) => {
@@ -41,14 +67,18 @@ function saveLocal(entry: RankingEntry) {
 async function fetchSupabaseTop(limit: number): Promise<RankingEntry[]> {
   const url =
     `${SUPABASE_URL}/rest/v1/scores` +
-    `?select=*&order=total_score.desc&order=created_at.desc&limit=${limit}`;
+    `?select=*&order=total_score.desc,created_at.desc&limit=${limit}`;
   const res = await fetch(url, {
     headers: {
       apikey: SUPABASE_ANON_KEY!,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Accept: "application/json",
     },
   });
-  if (!res.ok) throw new Error("supabase fetch failed");
+  if (!res.ok) {
+    disableSupabase(res.status);
+    throw new Error(`supabase fetch failed: ${res.status}`);
+  }
   const rows = (await res.json()) as any[];
   return rows.map((r) => ({
     id: r.id,
@@ -77,7 +107,7 @@ async function insertSupabase(
   challenge: Challenge
 ) {
   const url = `${SUPABASE_URL}/rest/v1/scores`;
-  await fetch(url, {
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY!,
@@ -100,6 +130,10 @@ async function insertSupabase(
       difficulty: challenge.difficulty,
     }),
   });
+  if (!res.ok) {
+    disableSupabase(res.status);
+    throw new Error(`supabase insert failed: ${res.status}`);
+  }
 }
 
 /* ===== 公開API ===== */
@@ -124,20 +158,20 @@ export async function saveScore(
     difficulty: challenge.difficulty,
     createdAt: Date.now(),
   };
-  if (useSupabase) {
+  // Supabaseが使える場合も、確実に表示できるよう端末内にも控えを残す
+  saveLocal(entry);
+  if (shouldUseSupabase()) {
     try {
       await insertSupabase(entry.playerName, result, challenge);
     } catch {
-      saveLocal(entry); // 失敗時はローカルに退避
+      /* 失敗時はlocalStorageの控えで動作継続 */
     }
-  } else {
-    saveLocal(entry);
   }
   return entry;
 }
 
 export async function topRanking(limit = 10): Promise<RankingEntry[]> {
-  if (useSupabase) {
+  if (shouldUseSupabase()) {
     try {
       return await fetchSupabaseTop(limit);
     } catch {
