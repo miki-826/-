@@ -385,6 +385,7 @@ function TitleScreen({
           aria-label="howto"
           onClick={onHowto}
         />
+        {false && (
         <div className="title-menu">
           <NeonButton variant="cyan" onClick={onStart} sfx="start" fluid>
             スタート
@@ -396,6 +397,7 @@ function TitleScreen({
             遊び方
           </NeonButton>
         </div>
+        )}
       </div>
     </div>
   );
